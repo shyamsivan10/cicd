@@ -57,26 +57,68 @@ resource "aws_route_table_association" "sub_1_association" {
 #    route_table_id = aws_route_table.route_table.id
 #}
 
-variable "aws_instance" {
-    default = {
-        "KubeMaster" = "t2.medium",
-        "KubeWorker" = "t2.small"
-    }
-}
+#variable "aws_instance" {
+#    default = {
+#        "KubeMaster" = "t2.medium",
+#        "KubeWorker" = "t2.small"
+#    }
+#}
 
-resource "aws_instance" "Kube" {
-    for_each = var.aws_instance
+resource "aws_instance" "KubeMaster" {
     ami = "ami-0b09627181c8d5778" # Example AMI, replace with a valid one for your region
-    instance_type = each.value
+    instance_type = "t2.medium"
     key_name = "test_server" # Replace with your actual key pair name
     subnet_id = aws_subnet.subnet_1.id
     associate_public_ip_address = true
 
     tags = {
-        Name = each.key
-        Role = each.key == "KubeMaster" ? "Master" : "Worker"
+        Name = "KubeMaster"
+        Role = "Master"
+    }
+
+    # Only run provisioner on KubeMaster
+    provisioner "remote-exec" {
+        inline = [
+            "sudo yum update -y",
+            "sudo yum install docker -y",
+            "sudo systemctl enable docker",
+            "sudo systemctl start docker",
+            "sudo usermod -aG docker ec2-user",
+            "sudo wget https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64",
+            "sudo chmod +x minikube-linux-amd64",
+            "sudo mv minikube-linux-amd64 /usr/local/bin/minikube",
+            "sudo curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl",
+            "sudo chmod +x kubectl",
+            "sudo mv kubectl /usr/local/bin/kubectl",
+            # if needed to Start Minikube (Docker driver) as a part of inline script
+            # "sudo minikube start --driver=docker"
+            "sudo usermod -aG docker ec2-user"
+        ]
+        connection {
+            type = "ssh"
+            host = self.public_ip
+            user = "ec2-user"
+            private_key = file("${pathexpand("C:/Users/100173/Downloads/test_server.pem")}")
+
+            # Increase the timeout to allow Minikube to start if line 94 is enabled to start the minikube as part of the inline script
+            # timeout = "10m"
+        }
     }
 }
+
+resource "aws_instance" "KubeWorker" {
+    ami = "ami-0b09627181c8d5778" # Example AMI, replace with a valid one for your region
+    instance_type = "t2.small"
+    key_name = "test_server" # Replace with your actual key pair name
+    subnet_id = aws_subnet.subnet_1.id
+    associate_public_ip_address = true
+
+    tags = {
+        Name = "KubeWorker"
+        Role = "Worker"
+    }
+}    
+
 
 #module "eks" {
 #  source  = "terraform-aws-modules/eks/aws"
